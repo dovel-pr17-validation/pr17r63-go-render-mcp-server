@@ -1,0 +1,50 @@
+SOT_REPO = "https://github.com/renderinc/render-mcp-server.git"
+SOT_BRANCH = "main"
+DESTINATION_REPO = "https://github.com/render-oss/render-mcp-server.git"
+DESTINATION_BRANCH = "main"
+
+DESTINATION_FILES = [
+  ".github/**",
+  "bin/**",
+  "cmd/**",
+  "docs/**",
+  "pkg/**",
+  "workflows/**",
+  ".gitignore",
+  ".goreleaser.yml",
+  "Dockerfile",
+  "go.mod",
+  "go.sum",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "main.go",
+  "README.md",
+  "render.yaml",
+  "SECURITY.md",
+  "copy.bara.sky",
+]
+
+DESTINATION_FILES_EXCLUDE = [
+  ".github/workflows/copybara-push.yaml",
+]
+
+DEFAULT_COMITTER = "Render Engineering <dev-public@render.com>"
+
+# Push workflow
+core.workflow(
+    name = "push",
+    origin = git.github_origin(
+        url = SOT_REPO,
+        ref = SOT_BRANCH,
+    ),
+    destination = git.github_destination(
+        url = DESTINATION_REPO,
+        push = DESTINATION_BRANCH,
+    ),
+    origin_files = glob(DESTINATION_FILES, exclude = DESTINATION_FILES_EXCLUDE),
+    authoring = authoring.pass_thru(default = DEFAULT_COMITTER),
+    mode = "ITERATIVE",
+    transformations = [
+        metadata.restore_author("ORIGINAL_AUTHOR", search_all_changes = True),
+    ],
+)

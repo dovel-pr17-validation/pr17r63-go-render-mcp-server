@@ -1,0 +1,422 @@
+# Render MCP Server
+
+## Overview
+
+The Render MCP Server is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction)
+server that allows you to interact with your Render resources via LLMs.
+
+## Getting Started
+
+Get started with the MCP server by following the official docs: https://render.com/docs/mcp-server
+
+## Logging
+
+Application logs are written as JSON to stderr. Set `LOG_LEVEL` to `DEBUG`, `INFO`, `WARN`, or
+`ERROR` to control verbosity; the default is `INFO`. Invalid levels fail startup.
+HTTP access logs, Render API error responses, expected SDK request failures, tool diagnostics,
+and HTTP SDK transport informational messages are emitted at `DEBUG`.
+Unexpected server failures are emitted at `ERROR`.
+
+## Protocol Support
+
+The server supports Streamable HTTP and stdio with MCP protocol versions
+`2025-11-25`, `2025-06-18`, `2025-03-26`, and `2024-11-05`.
+Stdio also supports the sessionless protocol `2026-07-28`. Streamable HTTP
+requires the initialize handshake with one of the versions listed above.
+
+## Use Cases
+
+- Creating and managing web services, static sites, cron jobs, and databases on Render
+- Monitoring application logs and deployment status to help troubleshoot issues
+- Monitoring service performance metrics for debugging, capacity planning, and optimization
+- Querying your Postgres databases directly inside an LLM
+
+## Feedback
+
+Please leave feedback via
+[filing a GitHub issue](https://github.com/render-oss/render-mcp-server/issues) if you have any
+feature requests, bug reports, suggestions, comments, or concerns.
+
+## Tools
+
+### Workspaces
+
+- **list_workspaces** - List the workspaces that you have access to
+
+  - No parameters required
+
+- **select_workspace** - Select a workspace to use
+
+  - `ownerID`: The ID of the workspace to select (string, required). Kept as `ownerID` so
+    existing callers of this deprecated tool keep working; new code should pass `workspaceId`
+    on each resource tool call instead.
+
+- **get_selected_workspace** - Get the currently selected workspace
+  - No parameters required
+
+Every resource tool also accepts an optional `workspaceId`. After the user confirms a workspace from
+`list_workspaces`, pass that `workspaceId` on each related tool call. This keeps the target workspace
+explicit across MCP reconnects and transport-session changes. If `workspaceId` is omitted, the server
+temporarily falls back to the workspace selected in the current MCP session. That implicit
+session-based behavior is deprecated and is scheduled for removal.
+
+### Services
+
+- **list_services** - List all services in your Render account
+
+  - `includePreviews`: Whether to include preview services, defaults to false (boolean, optional)
+
+- **get_service** - Get details about a specific service
+
+  - `serviceId`: The ID of the service to retrieve (string, required)
+
+- **create_web_service** - Create a new web service in your Render account
+
+  - `name`: A unique name for your service (string, required)
+  - `runtime`: Runtime environment for your service (string, required). Accepted values:
+    - `node`
+    - `python`
+    - `go`
+    - `rust`
+    - `ruby`
+    - `elixir`
+    - `docker`
+  - `buildCommand`: Command used to build your service (string, required unless runtime is `docker`)
+  - `startCommand`: Command used to start your service (string, required unless runtime is `docker`)
+  - `dockerfilePath`: Path to the Dockerfile relative to the repository root (string, optional). Defaults to `./Dockerfile`. Applies when runtime is `docker`.
+  - `dockerContext`: Build context directory relative to the repository root (string, optional). Defaults to `.`. Applies when runtime is `docker`.
+  - `dockerCommand`: Override for the image's startup command (string, optional). When omitted, uses the Dockerfile's `ENTRYPOINT` and `CMD`. An empty string also uses that default. Applies when runtime is `docker`.
+  - `repo`: Repository containing source code (string, optional)
+  - `branch`: Repository branch to deploy (string, optional)
+  - `plan`: Plan for your service (string, optional). Accepted values:
+    - `starter`
+    - `standard`
+    - `pro`
+    - `pro_max`
+    - `pro_plus`
+    - `pro_ultra`
+  - `autoDeploy`: Whether to automatically deploy the service (string, optional). Defaults to `yes`. Accepted values:
+    - `yes`: Enable automatic deployments
+    - `no`: Disable automatic deployments
+  - `region`: Geographic region for deployment (string, optional). Defaults to `oregon`. Accepted values:
+    - `oregon`
+    - `frankfurt`
+    - `singapore`
+    - `ohio`
+    - `virginia`
+  - `envVars`: Environment variables array (array, optional)
+
+  Deploying prebuilt images from a container registry is not supported.
+
+- **create_static_site** - Create a new static site in your Render account
+
+  - `name`: A unique name for your service (string, required)
+  - `buildCommand`: Command to build your app (string, required)
+  - `repo`: Repository containing source code (string, optional)
+  - `branch`: Repository branch to deploy (string, optional)
+  - `autoDeploy`: Whether to automatically deploy the service (string, optional). Defaults to `yes`. Accepted values:
+    - `yes`: Enable automatic deployments
+    - `no`: Disable automatic deployments
+  - `publishPath`: Directory containing built assets (string, optional)
+  - `envVars`: Environment variables array (array, optional)
+
+- **create_cron_job** - Create a new cron job in your Render account
+
+  - `name`: A unique name for your cron job (string, required)
+  - `schedule`: Cron schedule expression (string, required). Uses standard cron syntax with 5 fields: minute (0-59), hour (0-23), day of month (1-31), month (1-12), day of week (0-6, Sunday=0). Examples:
+    - `0 0 * * *`: Daily at midnight
+    - `*/15 * * * *`: Every 15 minutes
+    - `0 9 * * 1-5`: Weekdays at 9am
+    - `0 0 1 * *`: First day of each month at midnight
+  - `runtime`: Runtime environment for your cron job (string, required). Accepted values:
+    - `node`
+    - `python`
+    - `go`
+    - `rust`
+    - `ruby`
+    - `elixir`
+    - `docker`
+  - `buildCommand`: Command used to build your cron job (string, required unless runtime is `docker`)
+  - `startCommand`: Command that runs when your cron job executes (string, required unless runtime is `docker`)
+  - `dockerfilePath`: Path to the Dockerfile relative to the repository root (string, optional). Defaults to `./Dockerfile`. Applies when runtime is `docker`.
+  - `dockerContext`: Build context directory relative to the repository root (string, optional). Defaults to `.`. Applies when runtime is `docker`.
+  - `dockerCommand`: Override for the image's startup command (string, optional). When omitted, uses the Dockerfile's `ENTRYPOINT` and `CMD`. An empty string also uses that default. Applies when runtime is `docker`.
+  - `repo`: Repository containing source code (string, optional)
+  - `branch`: Repository branch to deploy (string, optional)
+  - `plan`: Plan for your cron job (string, optional). Accepted values:
+    - `starter`
+    - `standard`
+    - `pro`
+    - `pro_max`
+    - `pro_plus`
+    - `pro_ultra`
+  - `autoDeploy`: Whether to automatically deploy the cron job (string, optional). Defaults to `yes`. Accepted values:
+    - `yes`: Enable automatic deployments
+    - `no`: Disable automatic deployments
+  - `region`: Geographic region for deployment (string, optional). Defaults to `oregon`. Accepted values:
+    - `oregon`
+    - `frankfurt`
+    - `singapore`
+    - `ohio`
+    - `virginia`
+  - `envVars`: Environment variables array (array, optional)
+
+  Deploying prebuilt images from a container registry is not supported.
+
+- **update_environment_variables** - Update all environment variables for a service
+  - `serviceId`: The ID of the service to update (string, required)
+  - `envVars`: Complete list of environment variables (array, required)
+
+- **update_web_service** - Direct updates to a web service are not supported through the MCP server. This tool returns a link to the service's settings in the Render Dashboard, where changes can be made (or via the [Render API](https://render.com/docs/api-reference)).
+
+  - `serviceId`: The ID of the service to update (string, required)
+
+- **update_static_site** - Direct updates to a static site are not supported through the MCP server. This tool returns a link to the site's settings in the Render Dashboard, where changes can be made (or via the [Render API](https://render.com/docs/api-reference)).
+
+  - `serviceId`: The ID of the service to update (string, required)
+
+- **update_cron_job** - Direct updates to a cron job are not supported through the MCP server. This tool returns a link to the cron job's settings in the Render Dashboard, where changes can be made (or via the [Render API](https://render.com/docs/api-reference)).
+
+  - `serviceId`: The ID of the service to update (string, required)
+
+### Deployments
+
+- **list_deploys** - List deployment history for a service
+
+  - `serviceId`: The ID of the service to get deployments for (string, required)
+
+- **get_deploy** - Get details about a specific deployment
+
+  - `serviceId`: The ID of the service (string, required)
+  - `deployId`: The ID of the deployment (string, required)
+
+- **trigger_deploy** - Trigger a new deploy for a service. Services with autoDeploy enabled deploy automatically on push; use this for deploys that won't happen automatically.
+  - `serviceId`: The ID of the service to deploy (string, required)
+  - `clearCache`: Whether to clear the build cache before deploying (boolean, optional). Defaults to `false`.
+
+### Events
+
+- **list_events** - List a service's event history: deploys, builds, restarts, failures, scaling, suspensions, and disk changes. Failure events carry the reason a service went down (out-of-memory kills, non-zero exits, failed health checks, evictions), which does not appear in logs.
+
+  - `serviceId`: The ID of the service to list events for (string, required)
+  - `eventTypes`: Filter to specific event types (array of strings, optional). Returns all types when omitted. Accepted values:
+    - Build and deploy: `build_started`, `build_ended`, `deploy_started`, `deploy_ended`, `pre_deploy_started`, `pre_deploy_ended`, `initial_deploy_hook_started`, `initial_deploy_hook_ended`, `zero_downtime_redeploy_started`, `zero_downtime_redeploy_ended`, `commit_ignored`, `branch_deleted`, `image_pull_failed`, `artifact_fetch_failed`, `artifact_source_changed`, `auto_deploy_enabled`, `auto_deploy_disabled`, `pipeline_minutes_exhausted`
+    - Runtime health: `server_available`, `server_failed`, `server_hardware_failure`, `server_restarted`
+    - Scaling and plan: `autoscaling_started`, `autoscaling_ended`, `autoscaling_config_changed`, `instance_count_changed`, `plan_changed`
+    - Disk: `disk_created`, `disk_updated`, `disk_deleted`, `disk_snapshot_restored`, `service_disk_usage_high`, `service_disk_usage_recovered`
+    - Lifecycle and maintenance: `service_suspended`, `service_resumed`, `suspender_added`, `suspender_removed`, `maintenance_started`, `maintenance_ended`, `maintenance_mode_enabled`, `maintenance_mode_uri_updated`
+    - Job runs: `cron_job_run_started`, `cron_job_run_ended`, `job_run_ended`
+  - `startTime`: Start of the time range (RFC3339 format) (string, optional). Defaults to 7 days ago on the first page. Set it to reach events older than that.
+  - `endTime`: End of the time range (RFC3339 format) (string, optional). Defaults to the current time.
+  - `limit`: Maximum number of events to return, newest first (number, optional, min 1, max 100). Defaults to `20`.
+  - `cursor`: A unique string that corresponds to a position in the result list. If provided, the endpoint returns results that appear after the corresponding position. To fetch the first page of results, set to the empty string (string, optional).
+
+  Events cover services only, not Postgres or Key Value instances. The 7 day default applies to the first page only. For older events, page with the `cursor` from the previous call; if the first page comes back empty there is no cursor to follow, so set an earlier `startTime` instead.
+
+### Logs
+
+- **list_logs** - List logs matching the provided filters
+
+  - `resource`: Filter logs by their resource (array of strings, required)
+  - `level`: Filter logs by their severity level (array of strings, optional)
+  - `type`: Filter logs by their type (array of strings, optional)
+  - `instance`: Filter logs by the instance they were emitted from (array of strings, optional)
+  - `host`: Filter request logs by their host (array of strings, optional)
+  - `statusCode`: Filter request logs by their status code (array of strings, optional)
+  - `method`: Filter request logs by their requests method (array of strings, optional)
+  - `path`: Filter request logs by their path (array of strings, optional)
+  - `text`: Filter by the text of the logs (array of strings, optional)
+  - `startTime`: Start time for log query (RFC3339 format) (string, optional)
+  - `endTime`: End time for log query (RFC3339 format) (string, optional)
+  - `direction`: The direction to query logs for (string, optional)
+  - `limit`: Maximum number of logs to return (number, optional)
+
+- **list_log_label_values** - List all values for a given log label in the logs matching the provided filters
+  - `label`: The label to list values for (string, required)
+  - `resource`: Filter by resource (array of strings, required)
+  - `level`: Filter logs by their severity level (array of strings, optional)
+  - `type`: Filter logs by their type (array of strings, optional)
+  - `instance`: Filter logs by the instance they were emitted from (array of strings, optional)
+  - `host`: Filter request logs by their host (array of strings, optional)
+  - `statusCode`: Filter request logs by their status code (array of strings, optional)
+  - `method`: Filter request logs by their requests method (array of strings, optional)
+  - `path`: Filter request logs by their path (array of strings, optional)
+  - `text`: Filter by the text of the logs (array of strings, optional)
+  - `startTime`: Start time for log query (RFC3339 format) (string, optional)
+  - `endTime`: End time for log query (RFC3339 format) (string, optional)
+  - `direction`: The direction to query logs for (string, optional)
+
+### Metrics
+
+- **get_metrics** - Get performance metrics for any Render resource (services, Postgres databases, key-value stores). Metrics may be empty if the metric is not valid for the given resource
+  - `resourceId`: The ID of the resource to get metrics for (service ID, Postgres ID, or key-value store ID) (string, required)
+  - `metricTypes`: Which metrics to fetch (array of strings, required). Accepted values:
+    - `cpu_usage`: CPU usage metrics (available for all resources)
+    - `cpu_limit`: CPU resource constraints (available for all resources)
+    - `cpu_target`: CPU autoscaling thresholds (available for all resources)
+    - `memory_usage`: Memory usage metrics (available for all resources)
+    - `memory_limit`: Memory resource constraints (available for all resources)
+    - `memory_target`: Memory autoscaling thresholds (available for all resources)
+    - `instance_count`: Instance count metrics (available for all resources)
+    - `http_request_count`: HTTP request count metrics (services only)
+    - `http_latency`: HTTP response time metrics (services only)
+    - `bandwidth_usage`: Bandwidth usage metrics (services only)
+    - `active_connections`: Active connection metrics (databases and key-value stores only)
+  - `startTime`: Start time for metrics query in RFC3339 format (e.g., '2024-01-01T12:00:00Z'), defaults to 1 hour ago. The start time must be within the last 30 days (string, optional)
+  - `endTime`: End time for metrics query in RFC3339 format (e.g., '2024-01-01T13:00:00Z'), defaults to the current time. The end time must be within the last 30 days (string, optional)
+  - `resolution`: Time resolution for data points in seconds. Lower values provide more granular data. Higher values provide more aggregated data points. API defaults to 60 seconds if not provided, minimum 30 seconds (number, optional)
+  - `cpuUsageAggregationMethod`: Method for aggregating CPU usage metric values over time intervals (string, optional). Defaults to `AVG`. Accepted values:
+    - `AVG`: Average CPU usage over time intervals
+    - `MAX`: Maximum CPU usage over time intervals
+    - `MIN`: Minimum CPU usage over time intervals
+  - `aggregateHttpRequestCountsBy`: Field to aggregate HTTP request count metrics by (string, optional). When not specified, returns total request counts. Accepted values:
+    - `host`: Aggregate by request host
+    - `statusCode`: Aggregate by HTTP status code
+  - `httpLatencyQuantile`: The quantile/percentile of HTTP latency to fetch. Only supported for http_latency metric. Common values: 0.5 (median), 0.95 (95th percentile), 0.99 (99th percentile). Defaults to 0.95 if not specified (number, optional, min: 0.0, max: 1.0)
+  - `httpHost`: Filter HTTP metrics to specific request hosts. Supported for http_request_count and http_latency metrics. Example: 'api.example.com' or 'myapp.render.com'. When not specified, includes all hosts (string, optional)
+  - `httpPath`: Filter HTTP metrics to specific request paths. Supported for http_request_count and http_latency metrics. Example: '/api/users' or '/health'. When not specified, includes all paths (string, optional)
+
+### Postgres Databases
+
+- **query_render_postgres** - Run a read-only SQL query against a Render-hosted Postgres database
+
+  - `postgresId`: The ID of the Postgres instance to query (string, required)
+  - `sql`: The SQL query to run (string, required)
+
+  The tool connects over the database's external URL, so the database's IP allowlist applies. If the allowlist is empty, the tool reports that external connections are blocked instead of trying to connect. The hosted MCP server doesn't have IP addresses you can allowlist yet; to query an IP-restricted database, run the MCP server locally and add your IP address to the allowlist.
+
+- **list_postgres_instances** - List all PostgreSQL databases in your Render account
+
+  - No parameters required
+
+- **get_postgres** - Get details about a specific PostgreSQL database
+
+  - `postgresId`: The ID of the PostgreSQL database to retrieve (string, required)
+
+- **create_postgres** - Create a new PostgreSQL database
+  - `name`: Name of the PostgreSQL database (string, required)
+  - `plan`: Pricing plan for the database (string, required). Accepted values:
+    - `free`
+    - `basic_256mb`
+    - `basic_1gb`
+    - `basic_4gb`
+    - `pro_4gb`
+    - `pro_8gb`
+    - `pro_16gb`
+    - `pro_32gb`
+    - `pro_64gb`
+    - `pro_128gb`
+    - `pro_192gb`
+    - `pro_256gb`
+    - `pro_384gb`
+    - `pro_512gb`
+    - `accelerated_16gb`
+    - `accelerated_32gb`
+    - `accelerated_64gb`
+    - `accelerated_128gb`
+    - `accelerated_256gb`
+    - `accelerated_384gb`
+    - `accelerated_512gb`
+    - `accelerated_768gb`
+    - `accelerated_1024gb`
+  - `region`: Region for deployment (string, optional). Accepted values:
+    - `oregon`
+    - `frankfurt`
+    - `singapore`
+    - `ohio`
+    - `virginia`
+  - `version`: PostgreSQL version to use (e.g., 14, 15) (number, optional)
+  - `diskSizeGb`: Database capacity in GB (number, optional)
+
+### Key Value instances
+
+- **list_key_value** - List all Key Value instances in your Render account
+
+  - No parameters required
+
+- **get_key_value** - Get details about a specific Key Value instance
+
+  - `keyValueId`: The ID of the Key Value instance to retrieve (string, required)
+
+- **create_key_value** - Create a new Key Value instance
+  - `name`: Name of the Key Value instance (string, required)
+  - `plan`: Pricing plan for the Key Value instance (string, required). Accepted values:
+    - `free`
+    - `starter`
+    - `standard`
+    - `pro`
+    - `pro_plus`
+  - `region`: Region for deployment (string, optional). Accepted values:
+    - `oregon`
+    - `frankfurt`
+    - `singapore`
+    - `ohio`
+    - `virginia`
+  - `maxmemoryPolicy`: Eviction policy for the Key Value store (string, optional). Accepted values:
+    - `noeviction`: No eviction policy (may cause memory errors)
+    - `allkeys_lfu`: Evict least frequently used keys from all keys
+    - `allkeys_lru`: Evict least recently used keys from all keys
+    - `allkeys_random`: Evict random keys from all keys
+    - `volatile_lfu`: Evict least frequently used keys from keys with expiration
+    - `volatile_lru`: Evict least recently used keys from keys with expiration
+    - `volatile_random`: Evict random keys from keys with expiration
+    - `volatile_ttl`: Evict keys with shortest time to live from keys with expiration
+  - `persistenceMode`: Data persistence behavior for the Key Value store (string, optional). Accepted values:
+    - `journal_snapshot`: Append all writes to a journal and periodically save a snapshot to disk
+    - `snapshot`: Periodically save a snapshot to disk
+    - `off`: Disable persistence completely to prioritize write performance
+
+### Blueprints
+
+The Blueprint tools are in public alpha (early access). Their availability and contracts are subject to change.
+
+All Blueprint tools require a workspace, supplied through `workspaceId` or the selected workspace. Calls using a Blueprint ID verify that it belongs to that workspace before returning details or making changes, including before its first sync is approved.
+
+- **create_blueprint** - Create a Blueprint from a remote repository and plan its first sync
+
+  - `repoUrl`: Public repository URL or a repository accessible through a connected Git provider (string, required). Accepts `https://` or `ssh://` URLs without query strings or fragments. SSH URLs are converted to HTTPS; SCP-style remotes such as `git@host:path` are not accepted.
+  - `branch`: Branch containing the Blueprint file (string, optional). Defaults to the repository's default branch.
+  - `path`: Blueprint file path relative to the repository root (string, optional). Defaults to `render.yaml`.
+  - `name`: Blueprint name (string, optional). Defaults to the repository name without the `.git` suffix.
+  - `autoSync`: Whether later Git pushes automatically apply changes after the first sync is approved (boolean, optional). Defaults to `true`.
+  - `existingResources`: How planning handles existing resources (string, optional). Accepted values: `create_new` (default), which creates separate resources with a Blueprint-specific suffix, and `adopt`, which brings matching resources under the Blueprint's management. Infrastructure changes require approval.
+  - `workspaceId`: Workspace in which to create the Blueprint (string, optional). Falls back to the selected workspace when omitted; one of these must be available.
+
+- **get_blueprint** - Retrieve Blueprint settings, status, and managed resource IDs
+
+  - `blueprintId`: Blueprint ID starting with `exs-` (string, required)
+  - `workspaceId`: Workspace owning the Blueprint (string, optional). Falls back to the selected workspace when omitted.
+
+  The Blueprint's `status` describes syncing, not service health. `created` means its first sync has not been approved. After approval, `paused` means auto-sync is disabled; manual planning and approval remain available.
+
+- **plan_blueprint** - Plan infrastructure changes using the Blueprint's configured Git branch and file path
+
+  - `blueprintId`: Blueprint ID starting with `exs-` (string, required)
+  - `workspaceId`: Workspace owning the Blueprint (string, optional). Falls back to the selected workspace when omitted.
+
+- **approve_blueprint** - Approve and apply the Blueprint's newest successfully planned sync after user review
+
+  - `blueprintId`: Blueprint ID starting with `exs-`, not a sync ID (string, required)
+  - `workspaceId`: Workspace owning the Blueprint (string, optional). Falls back to the selected workspace when omitted.
+  - `manualEnvVars`: Values for every entry in `sync.requiredManualEnvVars` (array of objects, optional when no values are required). Each object requires these fields:
+    - `serviceType`: Resource type from the required entry (string). Accepted values: `buildSource`, `cron`, `pserv`, `web`, `worker`, `workflow`.
+    - `serviceName`: Resource name from the required entry (string)
+    - `key`: Environment variable key from the required entry (string)
+    - `value`: Exact user-provided value (string). Empty strings are allowed. Values appear as plaintext in the agent context.
+
+  Apply only after the user authorizes the reviewed plan. Providing or allowing generation of manual values, or accepting costs, does not itself authorize deployment. The tool returns the sync state and `dashboardUrl` before the sync and deployments finish.
+
+- **update_blueprint** - Update Blueprint settings and plan changes when the branch or file path changes
+
+  - `blueprintId`: Blueprint ID starting with `exs-` (string, required)
+  - `workspaceId`: Workspace owning the Blueprint (string, optional). Falls back to the selected workspace when omitted.
+  - `name`: New Blueprint name (string, optional)
+  - `branch`: New Git branch (string, optional)
+  - `path`: New Blueprint file path relative to the repository root (string, optional)
+  - `autoSync`: Whether later Git pushes automatically apply changes after first-sync approval (boolean, optional)
+
+  Supply at least one setting. Omitted settings keep their current values. Settings take effect immediately.
+
+Planning reads the remote repository, so push Blueprint file changes first. Review successfully planned
+changes before approval, including when auto-sync is enabled. Failed plans and plans with no changes must
+not be approved.
